@@ -1,2 +1,4 @@
 env
 config.yaml
+pull-files.ps1
+__pycache__

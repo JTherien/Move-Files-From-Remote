@@ -1,4 +1,5 @@
 import hashlib
+import logging
 
 def content_hash(f, block_size=4*(1024**2)):
 
@@ -18,9 +19,11 @@ def check_hashes(localpath, remotepath, connection):
     with connection.open(remotepath, 'rb', 32768) as f:
 
         remotehash = content_hash(f)
+        logging.debug(f'Remote content hash:\t{remotehash}')
 
     with open(localpath, 'rb') as f:
 
         localhash = content_hash(f)
+        logging.debug(f'Local content hash:\t{localhash}')
 
     return remotehash == localhash

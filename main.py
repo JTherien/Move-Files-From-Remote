@@ -1,7 +1,8 @@
 import os
+import time
+import logging
 import yaml
 import pysftp
-import logging
 from libs.hash import check_hashes
 
 logging.basicConfig(
@@ -9,6 +10,9 @@ logging.basicConfig(
     format='%(asctime)s - %(message)s', 
     datefmt='%d-%b-%y %H:%M:%S')
 
+# ----------------------------------------------------------------------
+# Load Configuration File
+# ----------------------------------------------------------------------
 with open('config.yaml', 'r') as stream:
 
     config = yaml.safe_load(stream)
@@ -22,6 +26,9 @@ connection_attempts = 1
 
 logging.info(f'Attempting to establish SFTP connection with {config["address"]}')
 
+# ----------------------------------------------------------------------
+# Establish connection with remote server
+# ----------------------------------------------------------------------
 while True:
 
     try:
@@ -50,6 +57,11 @@ while True:
 
 def move_from_remote(localpath, remotepath, sftp=sftp, attempts=10):
     
+    '''
+    Move a file from a remote to local directory.
+    Checks hash values afterwards to ensure the integrity of the move.
+    '''
+
     retry = 1
 
     while retry <= attempts:
@@ -58,18 +70,14 @@ def move_from_remote(localpath, remotepath, sftp=sftp, attempts=10):
 
         # Validate content hashes prior to deleting remote file     
         if check_hashes(localpath, remotepath, sftp):
-
-            logging.info(f'Successfully moved {entry}. Deleting remote copy')
             sftp.execute(f'rm {remotepath}')
             break
-
         else:
-
-            logging.warning(f'Unsuccessfully moved {entry}. Hash values do not match. Retrying {retry}/{attempts}')
-            print(f'{entry} did not import correctly. Retrying {retry}/{attempts}')
+            logging.warning(f'Unsuccessfully downloaded {entry}. Retrying {retry}/{attempts}')
             os.remove(localpath)
             retry+=1
 
+# Loop over every file in the remote directory
 for entry in sftp.listdir(config['path-motion']):
 
     entry_extension = entry.split('.')[1]
@@ -79,6 +87,13 @@ for entry in sftp.listdir(config['path-motion']):
         remotepath = f'{config["path-motion"]}{entry}'
         localpath = os.path.join(config['path-local'], entry)
         mode = sftp.stat(remotepath).st_mode
+
+        # Checks how many processes are writing to the entry file
+        # If py-timolo.py is currently writing the image file
+        # Wait until it finishes to move forward
+        while len(sftp.execute(f'lsof -f -- {remotepath}')) > 0:
+            logging.info(f'py-timolo.py is current writing the image file. Waiting 1 second to try again')
+            time.sleep(1)
 
         if not os.path.isfile(localpath):
             
