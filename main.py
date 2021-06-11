@@ -73,47 +73,49 @@ def move_from_remote(localpath, remotepath, sftp=sftp, attempts=10):
             sftp.execute(f'rm {remotepath}')
             break
         else:
-            logging.warning(f'Unsuccessfully downloaded {entry}. Retrying {retry}/{attempts}')
+            logging.warning(f'Unsuccessfully downloaded file. Retrying {retry}/{attempts}')
             os.remove(localpath)
             retry+=1
 
-# Loop over every file in the remote directory
-for entry in sftp.listdir(config['path-motion']):
+def iterate_over_remote_directory(l, r, sftp=sftp):
 
-    entry_extension = entry.split('.')[1]
+    for entry in sftp.listdir(r):
 
-    if entry_extension in ['png', 'jpg', 'gif']:
+        entry_extension = entry.split('.')[1]
 
-        remotepath = f'{config["path-motion"]}{entry}'
-        localpath = os.path.join(config['path-local'], entry)
-        mode = sftp.stat(remotepath).st_mode
+        if entry_extension in ['png', 'jpg', 'gif']:
 
-        # Checks how many processes are writing to the entry file
-        # If py-timolo.py is currently writing the image file
-        # Wait until it finishes to move forward
-        while len(sftp.execute(f'lsof -f -- {remotepath}')) > 0:
-            logging.info(f'py-timolo.py is current writing the image file. Waiting 1 second to try again')
-            time.sleep(1)
+            remotepath = f'{r}{entry}'
+            localpath = os.path.join(l, entry)
 
-        if not os.path.isfile(localpath):
-            
-            logging.info(f'Downloading {entry}')
-            move_from_remote(localpath, remotepath)
+            # Checks how many processes are writing to the entry file
+            # If py-timolo.py is currently writing the image file
+            # Wait until it finishes to move forward
+            while len(sftp.execute(f'lsof -f -- {remotepath}')) > 0:
+                logging.info(f'py-timolo.py is current writing {entry}. Trying again in 1 second')
+                time.sleep(1)
 
-        else:
-            
-            local_file_exists_message = f'{entry} exists in local directory'
-
-            if check_hashes(localpath, remotepath, sftp):
-
-                local_file_exists_message += ' Content hashes match'
-                logging.info(local_file_exists_message)
-                sftp.execute(f'rm {remotepath}')
-
-            else:
-
-                local_file_exists_message += f' Content hashes do not match. Downloading {entry}'
-                logging.warning(local_file_exists_message)
+            if not os.path.isfile(localpath):
+                
+                logging.info(f'Downloading {entry}')
                 move_from_remote(localpath, remotepath)
 
+            else:
+                
+                local_file_exists_message = f'{entry} exists in local directory.'
+
+                if check_hashes(localpath, remotepath, sftp):
+
+                    local_file_exists_message += ' Content hashes match'
+                    logging.info(local_file_exists_message)
+                    sftp.execute(f'rm {remotepath}')
+
+                else:
+
+                    local_file_exists_message += f' Content hashes do not match. Downloading {entry}'
+                    logging.warning(local_file_exists_message)
+                    move_from_remote(localpath, remotepath)
+
+iterate_over_remote_directory(config['path-local'], config['path-motion'])
+iterate_over_remote_directory(config['path-local-tl'], config['path-timelapse'])
 sftp.close()
